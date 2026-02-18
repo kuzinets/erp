@@ -73,6 +73,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login/form")
 
 
 async def get_current_user(
+    request: Request,
     token: str = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
@@ -81,6 +82,9 @@ async def get_current_user(
 
     Raises ``HTTPException(401)`` when the token is invalid or the user cannot
     be found.
+
+    Also stores the user dict on ``request.state._audit_user`` so the
+    read-access audit middleware can correlate requests to users.
     """
     # Import here to avoid circular imports at module level
     from app.models.user import User
@@ -117,7 +121,7 @@ async def get_current_user(
             detail="User account is deactivated",
         )
 
-    return {
+    user_dict = {
         "user_id": user.id,
         "username": user.username,
         "role": user.role,
@@ -125,6 +129,11 @@ async def get_current_user(
         "email": user.email,
         "subsidiary_id": str(user.subsidiary_id) if user.subsidiary_id else None,
     }
+
+    # Store on request for read-access audit middleware
+    request.state._audit_user = user_dict
+
+    return user_dict
 
 
 # ---------------------------------------------------------------------------
@@ -289,6 +298,26 @@ def apply_subsidiary_filter(stmt, user: dict[str, Any], subsidiary_column):
 
 
 # ---------------------------------------------------------------------------
+# Triple audit writer singleton
+# ---------------------------------------------------------------------------
+
+_triple_writer: "TripleAuditWriter | None" = None
+
+
+def _get_triple_writer():
+    """Lazy-initialise the singleton TripleAuditWriter."""
+    global _triple_writer
+    if _triple_writer is None:
+        from app.services.audit_service import TripleAuditWriter
+
+        _triple_writer = TripleAuditWriter(
+            base_path=settings.AUDIT_STORAGE_PATH,
+            system_name="erp",
+        )
+    return _triple_writer
+
+
+# ---------------------------------------------------------------------------
 # Audit-log helper
 # ---------------------------------------------------------------------------
 
@@ -302,8 +331,11 @@ async def write_audit_log(
     details: dict | None = None,
     ip_address: str | None = None,
 ) -> None:
-    """Write an immutable audit-log entry."""
+    """Write to PostgreSQL, then fire-and-forget to JSONL + SQLite."""
     from app.models.permission import AuditLog
+    from app.services.audit_service import AuditEvent, classify_action
+
+    category = classify_action(action)
 
     user_id = None
     username = None
@@ -313,6 +345,7 @@ async def write_audit_log(
             user_id = uid if isinstance(uid, uuid.UUID) else uuid.UUID(str(uid))
         username = user.get("username")
 
+    # ---- Primary: PostgreSQL (existing behaviour) ----
     entry = AuditLog(
         user_id=user_id,
         username=username,
@@ -321,6 +354,23 @@ async def write_audit_log(
         resource_id=resource_id,
         details=details,
         ip_address=ip_address,
+        event_category=category.value,
     )
     db.add(entry)
-    # Don't commit — let the caller's transaction handle it
+    await db.flush()
+
+    # ---- Secondary: JSONL + SQLite (non-blocking) ----
+    event = AuditEvent(
+        id=entry.id,
+        timestamp=datetime.now(timezone.utc),
+        category=category,
+        user_id=str(user_id) if user_id else None,
+        username=username,
+        action=action,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        details=details,
+        ip_address=ip_address,
+        system_name="erp",
+    )
+    _get_triple_writer().fire_and_forget(event)

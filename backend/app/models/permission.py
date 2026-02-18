@@ -54,6 +54,9 @@ class AuditLog(UUIDPrimaryKeyMixin, Base):
     resource_id: Mapped[str | None] = mapped_column(String(200))
     details: Mapped[dict | None] = mapped_column(JSONB)
     ip_address: Mapped[str | None] = mapped_column(String(45))
+    event_category: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'mutation'")
+    )
     created_at: Mapped[datetime.datetime] = mapped_column(
         nullable=False, server_default=text("NOW()")
     )

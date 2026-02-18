@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRY_MINUTES: int = 480
     LIBRARY_BASE_URL: str = "http://host.docker.internal:8000"
+    AUDIT_STORAGE_PATH: str = "/app/audit_storage"
     CORS_ORIGINS: list[str] = ["http://localhost:3001", "http://localhost:5173"]
 
     class Config:
