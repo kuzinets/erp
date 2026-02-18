@@ -10,7 +10,7 @@ from sqlalchemy import case, func, select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.middleware.auth import get_current_user
+from app.middleware.auth import get_current_user, require_permission
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -25,11 +25,18 @@ async def statement_of_activities(
     subsidiary_id: uuid.UUID | None = Query(None),
     fund_id: uuid.UUID | None = Query(None),
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(get_current_user),
+    _user: dict = Depends(require_permission("reports.financial.view")),
 ):
     """Generate Statement of Activities (P&L) for a fiscal period."""
     from app.models.gl import Account, JournalEntry, JournalLine
     from app.models.org import FiscalPeriod
+
+    # Default to user's subsidiary if not explicitly provided
+    if not subsidiary_id:
+        from app.middleware.auth import get_subsidiary_scope
+        scope = get_subsidiary_scope(_user)
+        if scope:
+            subsidiary_id = scope
 
     fp_result = await db.execute(
         select(FiscalPeriod).where(FiscalPeriod.period_code == fiscal_period)
@@ -120,7 +127,7 @@ async def statement_of_financial_position(
     as_of_period: str = Query(...),
     subsidiary_id: uuid.UUID | None = Query(None),
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(get_current_user),
+    _user: dict = Depends(require_permission("reports.financial.view")),
 ):
     """Generate Balance Sheet as of end of a fiscal period.
 
@@ -128,6 +135,13 @@ async def statement_of_financial_position(
     """
     from app.models.gl import Account, JournalEntry, JournalLine
     from app.models.org import FiscalPeriod
+
+    # Default to user's subsidiary if not explicitly provided
+    if not subsidiary_id:
+        from app.middleware.auth import get_subsidiary_scope
+        scope = get_subsidiary_scope(_user)
+        if scope:
+            subsidiary_id = scope
 
     # Get all periods up to and including the target
     fp_result = await db.execute(
@@ -259,7 +273,7 @@ async def statement_of_financial_position(
 async def fund_balances(
     fiscal_period: str = Query(...),
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(get_current_user),
+    _user: dict = Depends(require_permission("reports.financial.view")),
 ):
     """Show balance by fund across all accounts."""
     from app.models.gl import JournalEntry, JournalLine

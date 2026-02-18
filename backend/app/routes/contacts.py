@@ -1,4 +1,4 @@
-"""Contact management routes — Donors, Vendors, Volunteers."""
+"""Contact management routes -- Donors, Vendors, Volunteers."""
 from __future__ import annotations
 
 import uuid
@@ -9,7 +9,7 @@ from sqlalchemy import func, select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.middleware.auth import get_current_user, require_role
+from app.middleware.auth import get_current_user, require_permission, get_subsidiary_scope, write_audit_log
 
 router = APIRouter(prefix="/api/contacts", tags=["contacts"])
 
@@ -51,7 +51,7 @@ async def list_contacts(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(get_current_user),
+    _user: dict = Depends(require_permission("contacts.view")),
 ):
     from app.models.contact import Contact
 
@@ -65,6 +65,12 @@ async def list_contacts(
     if subsidiary_id:
         count_stmt = count_stmt.where(Contact.subsidiary_id == subsidiary_id)
         data_stmt = data_stmt.where(Contact.subsidiary_id == subsidiary_id)
+
+    if not subsidiary_id:
+        scope = get_subsidiary_scope(_user)
+        if scope:
+            count_stmt = count_stmt.where(Contact.subsidiary_id == scope)
+            data_stmt = data_stmt.where(Contact.subsidiary_id == scope)
 
     if search:
         like = f"%{search}%"
@@ -99,7 +105,7 @@ async def list_contacts(
 async def get_contact(
     contact_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(get_current_user),
+    _user: dict = Depends(require_permission("contacts.view")),
 ):
     from app.models.contact import Contact
 
@@ -131,7 +137,7 @@ async def get_contact(
 async def create_contact(
     body: ContactCreate,
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(require_role("admin", "accountant")),
+    _user: dict = Depends(require_permission("contacts.create")),
 ):
     from app.models.contact import Contact
 
@@ -152,6 +158,7 @@ async def create_contact(
     db.add(contact)
     await db.commit()
     await db.refresh(contact)
+    await write_audit_log(db, _user, "contact.create", "contact", str(contact.id), {"name": body.name, "contact_type": body.contact_type})
     return {"id": str(contact.id), "name": contact.name, "contact_type": contact.contact_type}
 
 
@@ -160,7 +167,7 @@ async def update_contact(
     contact_id: uuid.UUID,
     body: ContactUpdate,
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(require_role("admin", "accountant")),
+    _user: dict = Depends(require_permission("contacts.update")),
 ):
     from app.models.contact import Contact
 
@@ -175,4 +182,5 @@ async def update_contact(
             setattr(contact, field, val)
 
     await db.commit()
+    await write_audit_log(db, _user, "contact.update", "contact", str(contact_id), body.dict(exclude_unset=True))
     return {"status": "updated"}

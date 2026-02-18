@@ -47,9 +47,10 @@ app.add_middleware(
 )
 
 # Import and register routers
-from app.routes import auth, gl, reports, org, contacts, subsystems, dashboard
+from app.routes import admin, auth, gl, reports, org, contacts, subsystems, dashboard
 
 app.include_router(auth.router)
+app.include_router(admin.router)
 app.include_router(gl.router)
 app.include_router(reports.router)
 app.include_router(org.router)

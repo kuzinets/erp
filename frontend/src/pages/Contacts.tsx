@@ -6,8 +6,8 @@ import { Plus, X, Search, RefreshCw, AlertCircle, Users, ChevronLeft, ChevronRig
 const CONTACT_TYPES = ['donor', 'vendor', 'volunteer', 'member', 'other'];
 
 export default function Contacts() {
-  const { isAdmin, isAccountant } = useAuth();
-  const canEdit = isAdmin || isAccountant;
+  const { can } = useAuth();
+  const canEdit = can('contacts.create');
   const [contacts, setContacts] = useState<any[]>([]);
   const [subsidiaries, setSubsidiaries] = useState<any[]>([]);
   const [total, setTotal] = useState(0);

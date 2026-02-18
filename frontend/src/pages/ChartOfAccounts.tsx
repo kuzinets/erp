@@ -100,7 +100,7 @@ function AccountRow({
 }
 
 export default function ChartOfAccounts() {
-  const { isAdmin } = useAuth();
+  const { can } = useAuth();
   const [tree, setTree] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -219,7 +219,7 @@ export default function ChartOfAccounts() {
           <h1 className="text-2xl font-bold text-kailasa-text">Chart of Accounts</h1>
           <p className="text-kailasa-muted text-sm mt-0.5">{flatAccounts.length} accounts</p>
         </div>
-        {isAdmin && (
+        {can('gl.accounts.create') && (
           <button onClick={handleCreate} className="btn-primary flex items-center gap-2">
             <Plus size={16} /> New Account
           </button>

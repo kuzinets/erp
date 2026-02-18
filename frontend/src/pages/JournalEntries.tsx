@@ -35,8 +35,8 @@ function JEList({
   onViewDetail: (id: string) => void;
   onCreateNew: () => void;
 }) {
-  const { isAdmin, isAccountant } = useAuth();
-  const canEdit = isAdmin || isAccountant;
+  const { can } = useAuth();
+  const canEdit = can('gl.journal_entries.create');
   const [entries, setEntries] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -166,8 +166,10 @@ function JEList({
 // ── JE Detail ──────────────────────────────────────────────
 
 function JEDetail({ jeId, onBack }: { jeId: string; onBack: () => void }) {
-  const { isAdmin, isAccountant } = useAuth();
-  const canEdit = isAdmin || isAccountant;
+  const { can } = useAuth();
+  const canEdit = can('gl.journal_entries.create');
+  const canPost = can('gl.journal_entries.post');
+  const canReverse = can('gl.journal_entries.reverse');
   const [je, setJE] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -236,12 +238,12 @@ function JEDetail({ jeId, onBack }: { jeId: string; onBack: () => void }) {
           </div>
           <div className="flex items-center gap-2">
             <span className={`badge-${je.status}`}>{je.status}</span>
-            {canEdit && je.status === 'draft' && (
+            {canPost && je.status === 'draft' && (
               <button onClick={handlePost} disabled={actionLoading} className="btn-success btn-sm flex items-center gap-1">
                 <CheckCircle size={14} /> Post
               </button>
             )}
-            {canEdit && je.status === 'posted' && (
+            {canReverse && je.status === 'posted' && (
               <button onClick={handleReverse} disabled={actionLoading} className="btn-danger btn-sm flex items-center gap-1">
                 <RotateCcw size={14} /> Reverse
               </button>

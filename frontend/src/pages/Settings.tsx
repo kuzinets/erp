@@ -23,7 +23,7 @@ import {
 type Tab = 'periods' | 'departments';
 
 export default function Settings() {
-  const { isAdmin } = useAuth();
+  const { can } = useAuth();
   const [tab, setTab] = useState<Tab>('periods');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -175,7 +175,7 @@ export default function Settings() {
                   <th className="py-3 px-3 text-xs font-semibold text-kailasa-muted uppercase">Start</th>
                   <th className="py-3 px-3 text-xs font-semibold text-kailasa-muted uppercase">End</th>
                   <th className="py-3 px-3 text-xs font-semibold text-kailasa-muted uppercase">Status</th>
-                  {isAdmin && <th className="py-3 px-3 text-xs font-semibold text-kailasa-muted uppercase w-24">Action</th>}
+                  {can('org.fiscal_periods.close') && <th className="py-3 px-3 text-xs font-semibold text-kailasa-muted uppercase w-24">Action</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-kailasa-border/50">
@@ -186,7 +186,7 @@ export default function Settings() {
                     <td className="py-2.5 px-3 text-sm text-kailasa-muted">{p.start_date}</td>
                     <td className="py-2.5 px-3 text-sm text-kailasa-muted">{p.end_date}</td>
                     <td className="py-2.5 px-3"><span className={`badge-${p.status}`}>{p.status}</span></td>
-                    {isAdmin && (
+                    {can('org.fiscal_periods.close') && (
                       <td className="py-2.5 px-3">
                         {p.status === 'open' ? (
                           <button onClick={() => handleClosePeriod(p.id)} className="btn-secondary btn-sm flex items-center gap-1 text-xs">
@@ -208,7 +208,7 @@ export default function Settings() {
       ) : (
         <div className="space-y-4">
           <div className="flex justify-end">
-            {isAdmin && (
+            {can('org.fiscal_periods.close') && (
               <button onClick={() => setShowDeptModal(true)} className="btn-primary flex items-center gap-2">
                 <Plus size={16} /> New Department
               </button>

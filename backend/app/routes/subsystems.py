@@ -1,4 +1,4 @@
-"""Subsystem integration routes — manage connected systems and sync."""
+"""Subsystem integration routes -- manage connected systems and sync."""
 from __future__ import annotations
 
 import uuid
@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.middleware.auth import get_current_user, require_role
+from app.middleware.auth import get_current_user, require_permission, write_audit_log
 
 router = APIRouter(prefix="/api/subsystems", tags=["subsystems"])
 
@@ -48,7 +48,7 @@ class AccountMappingCreate(BaseModel):
 @router.get("")
 async def list_subsystems(
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(get_current_user),
+    _user: dict = Depends(require_permission("subsystems.view")),
 ):
     from app.models.subsystem import SubsystemConfig
 
@@ -82,7 +82,7 @@ async def list_subsystems(
 async def get_subsystem(
     config_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(get_current_user),
+    _user: dict = Depends(require_permission("subsystems.view")),
 ):
     from app.models.subsystem import SubsystemConfig, SubsystemAccountMapping
 
@@ -130,7 +130,7 @@ async def get_subsystem(
 async def create_subsystem(
     body: SubsystemConfigCreate,
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(require_role("admin")),
+    _user: dict = Depends(require_permission("subsystems.create")),
 ):
     from app.models.subsystem import SubsystemConfig
     from passlib.context import CryptContext
@@ -149,6 +149,7 @@ async def create_subsystem(
     db.add(config)
     await db.commit()
     await db.refresh(config)
+    await write_audit_log(db, _user, "subsystem.create", "subsystem_config", str(config.id), {"name": body.name, "system_type": body.system_type})
     return {"id": str(config.id), "name": config.name}
 
 
@@ -157,7 +158,7 @@ async def update_subsystem(
     config_id: uuid.UUID,
     body: SubsystemConfigUpdate,
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(require_role("admin")),
+    _user: dict = Depends(require_permission("subsystems.update")),
 ):
     from app.models.subsystem import SubsystemConfig
 
@@ -174,6 +175,7 @@ async def update_subsystem(
             setattr(config, field, val)
 
     await db.commit()
+    await write_audit_log(db, _user, "subsystem.update", "subsystem_config", str(config_id), body.dict(exclude_unset=True))
     return {"status": "updated"}
 
 
@@ -185,7 +187,7 @@ async def update_subsystem(
 async def list_account_mappings(
     config_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(get_current_user),
+    _user: dict = Depends(require_permission("subsystems.view")),
 ):
     from app.models.subsystem import SubsystemAccountMapping
 
@@ -220,7 +222,7 @@ async def create_account_mapping(
     config_id: uuid.UUID,
     body: AccountMappingCreate,
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(require_role("admin")),
+    _user: dict = Depends(require_permission("subsystems.create")),
 ):
     from app.models.subsystem import SubsystemAccountMapping
 
@@ -234,6 +236,7 @@ async def create_account_mapping(
     db.add(mapping)
     await db.commit()
     await db.refresh(mapping)
+    await write_audit_log(db, _user, "subsystem.mapping.create", "subsystem_account_mapping", str(mapping.id), {"source_account_code": body.source_account_code, "config_id": str(config_id)})
     return {"id": str(mapping.id), "source_account_code": mapping.source_account_code}
 
 
@@ -246,13 +249,14 @@ async def trigger_sync(
     config_id: uuid.UUID,
     fiscal_period: str = Query(..., description="Period to sync, e.g. 2026-02"),
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(require_role("admin", "accountant")),
+    user: dict = Depends(require_permission("subsystems.sync")),
 ):
     """Trigger a sync from a connected subsystem for a given fiscal period."""
     from app.services.sync_service import SyncService
 
     service = SyncService(db)
     result = await service.sync_from_subsystem(config_id, fiscal_period, user)
+    await write_audit_log(db, user, "subsystem.sync", "subsystem_config", str(config_id), {"fiscal_period": fiscal_period})
     return result
 
 
@@ -262,7 +266,7 @@ async def list_sync_logs(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(get_current_user),
+    _user: dict = Depends(require_permission("subsystems.view")),
 ):
     from app.models.subsystem import SyncLog
     from sqlalchemy import func

@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { Plus, X, RefreshCw, AlertCircle, Building2, Globe, MapPin } from 'lucide-react';
 
 export default function Subsidiaries() {
-  const { isAdmin } = useAuth();
+  const { can } = useAuth();
   const [subs, setSubs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -80,7 +80,7 @@ export default function Subsidiaries() {
           <h1 className="text-2xl font-bold text-kailasa-text">Subsidiaries</h1>
           <p className="text-kailasa-muted text-sm mt-0.5">{subs.length} entities</p>
         </div>
-        {isAdmin && (
+        {can('org.subsidiaries.create') && (
           <button onClick={handleCreate} className="btn-primary flex items-center gap-2">
             <Plus size={16} /> New Subsidiary
           </button>
@@ -99,7 +99,7 @@ export default function Subsidiaries() {
           <div
             key={sub.id}
             className="card hover:shadow-warm-lg transition-shadow cursor-pointer"
-            onClick={() => isAdmin && handleEdit(sub)}
+            onClick={() => can('org.subsidiaries.create') && handleEdit(sub)}
           >
             <div className="flex items-start gap-3">
               <div className="w-10 h-10 rounded-xl bg-primary-600/20 flex items-center justify-center">

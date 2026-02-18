@@ -1,4 +1,4 @@
-"""Organization routes — Subsidiaries, Departments, Fiscal Periods."""
+"""Organization routes -- Subsidiaries, Departments, Fiscal Periods."""
 from __future__ import annotations
 
 import uuid
@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.middleware.auth import get_current_user, require_role
+from app.middleware.auth import get_current_user, require_permission, get_subsidiary_scope, write_audit_log
 
 router = APIRouter(prefix="/api/org", tags=["organization"])
 
@@ -41,7 +41,7 @@ class SubsidiaryUpdate(BaseModel):
 async def list_subsidiaries(
     is_active: bool = Query(True),
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(get_current_user),
+    _user: dict = Depends(require_permission("org.subsidiaries.view")),
 ):
     from app.models.org import Subsidiary
 
@@ -70,7 +70,7 @@ async def list_subsidiaries(
 async def get_subsidiary(
     sub_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(get_current_user),
+    _user: dict = Depends(require_permission("org.subsidiaries.view")),
 ):
     from app.models.org import Subsidiary
 
@@ -96,7 +96,7 @@ async def get_subsidiary(
 async def create_subsidiary(
     body: SubsidiaryCreate,
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(require_role("admin")),
+    _user: dict = Depends(require_permission("org.subsidiaries.create")),
 ):
     from app.models.org import Subsidiary
 
@@ -112,6 +112,7 @@ async def create_subsidiary(
     db.add(sub)
     await db.commit()
     await db.refresh(sub)
+    await write_audit_log(db, _user, "org.subsidiary.create", "subsidiary", str(sub.id), {"code": body.code})
     return {"id": str(sub.id), "code": sub.code, "name": sub.name}
 
 
@@ -120,7 +121,7 @@ async def update_subsidiary(
     sub_id: uuid.UUID,
     body: SubsidiaryUpdate,
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(require_role("admin")),
+    _user: dict = Depends(require_permission("org.subsidiaries.update")),
 ):
     from app.models.org import Subsidiary
 
@@ -135,6 +136,7 @@ async def update_subsidiary(
             setattr(sub, field, val)
 
     await db.commit()
+    await write_audit_log(db, _user, "org.subsidiary.update", "subsidiary", str(sub_id), body.dict(exclude_unset=True))
     return {"status": "updated"}
 
 
@@ -145,7 +147,7 @@ async def update_subsidiary(
 @router.get("/fiscal-years")
 async def list_fiscal_years(
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(get_current_user),
+    _user: dict = Depends(require_permission("org.fiscal_periods.view")),
 ):
     from app.models.org import FiscalYear
 
@@ -172,7 +174,7 @@ async def list_fiscal_periods(
     fiscal_year_id: uuid.UUID | None = Query(None),
     status: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(get_current_user),
+    _user: dict = Depends(require_permission("org.fiscal_periods.view")),
 ):
     from app.models.org import FiscalPeriod
 
@@ -206,7 +208,7 @@ async def list_fiscal_periods(
 async def close_fiscal_period(
     period_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(require_role("admin")),
+    _user: dict = Depends(require_permission("org.fiscal_periods.close")),
 ):
     from app.models.org import FiscalPeriod
 
@@ -220,6 +222,7 @@ async def close_fiscal_period(
 
     period.status = "closed"
     await db.commit()
+    await write_audit_log(db, _user, "org.fiscal_period.close", "fiscal_period", str(period_id), {"period_code": period.period_code})
     return {"status": "closed", "period_code": period.period_code}
 
 
@@ -227,7 +230,7 @@ async def close_fiscal_period(
 async def reopen_fiscal_period(
     period_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(require_role("admin")),
+    _user: dict = Depends(require_permission("org.fiscal_periods.reopen")),
 ):
     from app.models.org import FiscalPeriod
 
@@ -238,6 +241,7 @@ async def reopen_fiscal_period(
 
     period.status = "adjusting"
     await db.commit()
+    await write_audit_log(db, _user, "org.fiscal_period.reopen", "fiscal_period", str(period_id), {"period_code": period.period_code})
     return {"status": "adjusting", "period_code": period.period_code}
 
 
@@ -249,13 +253,19 @@ async def reopen_fiscal_period(
 async def list_departments(
     subsidiary_id: uuid.UUID | None = Query(None),
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(get_current_user),
+    _user: dict = Depends(require_permission("org.departments.view")),
 ):
     from app.models.org import Department
 
     stmt = select(Department)
     if subsidiary_id:
         stmt = stmt.where(Department.subsidiary_id == subsidiary_id)
+
+    if not subsidiary_id:
+        scope = get_subsidiary_scope(_user)
+        if scope:
+            stmt = stmt.where(Department.subsidiary_id == scope)
+
     stmt = stmt.order_by(Department.code)
 
     result = await db.execute(stmt)
@@ -279,7 +289,7 @@ async def list_departments(
 async def create_department(
     body: dict,
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(require_role("admin")),
+    _user: dict = Depends(require_permission("org.departments.create")),
 ):
     from app.models.org import Department
 
@@ -291,4 +301,5 @@ async def create_department(
     db.add(dept)
     await db.commit()
     await db.refresh(dept)
+    await write_audit_log(db, _user, "org.department.create", "department", str(dept.id), {"code": body["code"]})
     return {"id": str(dept.id), "code": dept.code, "name": dept.name}

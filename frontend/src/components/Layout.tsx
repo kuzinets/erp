@@ -16,11 +16,14 @@ import {
   ChevronRight,
   Menu,
   X,
+  Shield,
+  ClipboardList,
 } from 'lucide-react';
 
 interface NavChild {
   label: string;
   path: string;
+  permission?: string;
 }
 
 interface NavItem {
@@ -28,37 +31,45 @@ interface NavItem {
   path?: string;
   icon: React.ReactNode;
   children?: NavChild[];
-  roles?: string[];
+  permission?: string;
 }
 
 const navItems: NavItem[] = [
-  { label: 'Dashboard', path: '/', icon: <LayoutDashboard size={20} /> },
+  { label: 'Dashboard', path: '/', icon: <LayoutDashboard size={20} />, permission: 'reports.dashboard.view' },
   {
     label: 'General Ledger',
     icon: <BookOpen size={20} />,
     children: [
-      { label: 'Chart of Accounts', path: '/gl/accounts' },
-      { label: 'Journal Entries', path: '/gl/journal-entries' },
-      { label: 'Trial Balance', path: '/gl/trial-balance' },
+      { label: 'Chart of Accounts', path: '/gl/accounts', permission: 'gl.accounts.view' },
+      { label: 'Journal Entries', path: '/gl/journal-entries', permission: 'gl.journal_entries.view' },
+      { label: 'Trial Balance', path: '/gl/trial-balance', permission: 'gl.trial_balance.view' },
     ],
   },
-  { label: 'Financial Reports', path: '/reports', icon: <BarChart3 size={20} /> },
+  { label: 'Financial Reports', path: '/reports', icon: <BarChart3 size={20} />, permission: 'reports.financial.view' },
   {
     label: 'Organization',
     icon: <Building2 size={20} />,
     children: [
-      { label: 'Subsidiaries', path: '/org/subsidiaries' },
-      { label: 'Fiscal Periods', path: '/org/fiscal-periods' },
-      { label: 'Departments', path: '/org/departments' },
+      { label: 'Subsidiaries', path: '/org/subsidiaries', permission: 'org.subsidiaries.view' },
+      { label: 'Fiscal Periods', path: '/org/fiscal-periods', permission: 'org.fiscal_periods.view' },
+      { label: 'Departments', path: '/org/departments', permission: 'org.departments.view' },
     ],
   },
-  { label: 'Contacts', path: '/contacts', icon: <Users size={20} /> },
-  { label: 'Connected Systems', path: '/subsystems', icon: <Plug size={20} /> },
-  { label: 'Settings', path: '/settings', icon: <Settings size={20} />, roles: ['admin'] },
+  { label: 'Contacts', path: '/contacts', icon: <Users size={20} />, permission: 'contacts.view' },
+  { label: 'Connected Systems', path: '/subsystems', icon: <Plug size={20} />, permission: 'subsystems.view' },
+  {
+    label: 'Administration',
+    icon: <Shield size={20} />,
+    children: [
+      { label: 'User Management', path: '/admin/users', permission: 'admin.users.view' },
+      { label: 'Audit Log', path: '/admin/audit', permission: 'admin.audit_log.view' },
+    ],
+  },
+  { label: 'Settings', path: '/settings', icon: <Settings size={20} />, permission: 'admin.users.view' },
 ];
 
 export default function Layout() {
-  const { user, logout } = useAuth();
+  const { user, logout, can } = useAuth();
   const location = useLocation();
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
     new Set(['General Ledger', 'Organization'])
@@ -81,12 +92,36 @@ export default function Layout() {
 
   const roleBadge = (role: string) => {
     const colors: Record<string, string> = {
-      admin: 'bg-primary-600/30 text-primary-300',
-      accountant: 'bg-green-900/40 text-green-400',
-      program_manager: 'bg-blue-900/40 text-blue-400',
+      system_admin: 'bg-red-900/40 text-red-400',
+      controller: 'bg-purple-900/40 text-purple-400',
+      senior_accountant: 'bg-primary-600/30 text-primary-300',
+      junior_accountant: 'bg-blue-900/40 text-blue-400',
+      program_manager: 'bg-teal-900/40 text-teal-400',
+      auditor: 'bg-yellow-900/40 text-yellow-400',
       viewer: 'bg-gray-700/60 text-gray-400',
     };
     return colors[role] || colors.viewer;
+  };
+
+  const roleLabel = (role: string) => {
+    const labels: Record<string, string> = {
+      system_admin: 'System Admin',
+      controller: 'Controller',
+      senior_accountant: 'Sr. Accountant',
+      junior_accountant: 'Jr. Accountant',
+      program_manager: 'Program Mgr',
+      auditor: 'Auditor',
+      viewer: 'Viewer',
+    };
+    return labels[role] || role.replace(/_/g, ' ');
+  };
+
+  /** Check if a nav item (or any of its children) should be visible */
+  const isVisible = (item: NavItem): boolean => {
+    if (item.children) {
+      return item.children.some((child) => !child.permission || can(child.permission));
+    }
+    return !item.permission || can(item.permission);
   };
 
   const sidebar = (
@@ -106,10 +141,13 @@ export default function Layout() {
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
-        {navItems.map((item) => {
-          if (item.roles && user && !item.roles.includes(user.role)) return null;
-
+        {navItems.filter(isVisible).map((item) => {
           if (item.children) {
+            const visibleChildren = item.children.filter(
+              (child) => !child.permission || can(child.permission)
+            );
+            if (visibleChildren.length === 0) return null;
+
             const expanded = expandedGroups.has(item.label);
             const groupActive = isGroupActive(item);
             return (
@@ -128,7 +166,7 @@ export default function Layout() {
                 </button>
                 {expanded && (
                   <div className="ml-8 mt-0.5 space-y-0.5">
-                    {item.children.map((child) => (
+                    {visibleChildren.map((child) => (
                       <Link
                         key={child.path}
                         to={child.path}
@@ -178,7 +216,7 @@ export default function Layout() {
               <span
                 className={`inline-block mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold ${roleBadge(user.role)}`}
               >
-                {user.role.replace('_', ' ')}
+                {roleLabel(user.role)}
               </span>
             </div>
           </div>

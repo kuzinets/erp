@@ -66,6 +66,20 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
         )
 
     token = _create_token(user)
+
+    # Resolve effective permissions to include in login response
+    from app.middleware.auth import resolve_permissions
+    from app.rbac import GLOBAL_SCOPE_ROLES
+
+    user_dict = {
+        "user_id": user.id,
+        "username": user.username,
+        "role": user.role,
+        "subsidiary_id": str(user.subsidiary_id) if user.subsidiary_id else None,
+    }
+    permissions = await resolve_permissions(user_dict, db)
+    scope = "global" if user.role in GLOBAL_SCOPE_ROLES else "subsidiary"
+
     return TokenResponse(
         access_token=token,
         user={
@@ -75,18 +89,32 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
             "email": user.email,
             "role": user.role,
             "subsidiary_id": str(user.subsidiary_id) if user.subsidiary_id else None,
+            "permissions": sorted(permissions),
+            "scope": scope,
         },
     )
 
 
 @router.get("/me")
-async def get_me(user: dict = Depends(get_current_user)):
+async def get_me(
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.middleware.auth import resolve_permissions
+    from app.rbac import GLOBAL_SCOPE_ROLES
+
+    permissions = await resolve_permissions(user, db)
+    scope = "global" if user["role"] in GLOBAL_SCOPE_ROLES else "subsidiary"
+
     return {
         "username": user["username"],
         "role": user["role"],
         "user_id": str(user["user_id"]),
         "subsidiary_id": user.get("subsidiary_id"),
         "display_name": user.get("display_name", user["username"]),
+        "email": user.get("email"),
+        "permissions": sorted(permissions),
+        "scope": scope,
     }
 
 

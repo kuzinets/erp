@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { Calendar, Lock, Unlock, RefreshCw, AlertCircle, X } from 'lucide-react';
 
 export default function FiscalPeriods() {
-  const { isAdmin } = useAuth();
+  const { can } = useAuth();
   const [periods, setPeriods] = useState<any[]>([]);
   const [years, setYears] = useState<any[]>([]);
   const [yearFilter, setYearFilter] = useState('');
@@ -83,7 +83,7 @@ export default function FiscalPeriods() {
               <th className="py-3 px-3 text-xs font-semibold text-kailasa-muted uppercase">Start</th>
               <th className="py-3 px-3 text-xs font-semibold text-kailasa-muted uppercase">End</th>
               <th className="py-3 px-3 text-xs font-semibold text-kailasa-muted uppercase">Status</th>
-              {isAdmin && <th className="py-3 px-3 text-xs font-semibold text-kailasa-muted uppercase w-24">Action</th>}
+              {can('org.fiscal_periods.close') && <th className="py-3 px-3 text-xs font-semibold text-kailasa-muted uppercase w-24">Action</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-kailasa-border/50">
@@ -94,7 +94,7 @@ export default function FiscalPeriods() {
                 <td className="py-2.5 px-3 text-sm text-kailasa-muted">{p.start_date}</td>
                 <td className="py-2.5 px-3 text-sm text-kailasa-muted">{p.end_date}</td>
                 <td className="py-2.5 px-3"><span className={`badge-${p.status}`}>{p.status}</span></td>
-                {isAdmin && (
+                {can('org.fiscal_periods.close') && (
                   <td className="py-2.5 px-3">
                     {p.status === 'open' ? (
                       <button onClick={() => handleClose(p.id)} className="btn-secondary btn-sm flex items-center gap-1 text-xs">

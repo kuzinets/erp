@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { Plus, X, RefreshCw, AlertCircle, Building } from 'lucide-react';
 
 export default function Departments() {
-  const { isAdmin } = useAuth();
+  const { can } = useAuth();
   const [departments, setDepartments] = useState<any[]>([]);
   const [subsidiaries, setSubsidiaries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,7 +52,7 @@ export default function Departments() {
           <h1 className="text-2xl font-bold text-kailasa-text">Departments</h1>
           <p className="text-kailasa-muted text-sm mt-0.5">{departments.length} departments</p>
         </div>
-        {isAdmin && (
+        {can('org.departments.create') && (
           <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2">
             <Plus size={16} /> New Department
           </button>

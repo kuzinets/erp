@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.middleware.auth import get_current_user, require_role
+from app.middleware.auth import get_current_user, require_permission, require_role, apply_subsidiary_filter, write_audit_log
 
 router = APIRouter(prefix="/api/gl", tags=["general-ledger"])
 
@@ -154,7 +154,7 @@ async def list_accounts(
     account_type: str | None = Query(None),
     is_active: bool = Query(True),
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(get_current_user),
+    _user: dict = Depends(require_permission("gl.accounts.view")),
 ):
     from app.models.gl import Account
 
@@ -186,7 +186,7 @@ async def list_accounts(
 @router.get("/accounts/tree")
 async def get_accounts_tree(
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(get_current_user),
+    _user: dict = Depends(require_permission("gl.accounts.view")),
 ):
     """Return chart of accounts as a nested tree."""
     from app.models.gl import Account
@@ -223,7 +223,7 @@ async def get_accounts_tree(
 async def get_account(
     account_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(get_current_user),
+    _user: dict = Depends(require_permission("gl.accounts.view")),
 ):
     from app.models.gl import Account
 
@@ -249,7 +249,7 @@ async def get_account(
 async def create_account(
     body: AccountCreate,
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(require_role("admin")),
+    _user: dict = Depends(require_permission("gl.accounts.create")),
 ):
     from app.models.gl import Account
 
@@ -266,6 +266,8 @@ async def create_account(
     await db.commit()
     await db.refresh(account)
 
+    await write_audit_log(db, _user, "gl.account.create", "account", str(account.id), {"account_number": body.account_number})
+
     return {"id": str(account.id), "account_number": account.account_number, "name": account.name}
 
 
@@ -274,7 +276,7 @@ async def update_account(
     account_id: uuid.UUID,
     body: AccountUpdate,
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(require_role("admin")),
+    _user: dict = Depends(require_permission("gl.accounts.update")),
 ):
     from app.models.gl import Account
 
@@ -283,16 +285,24 @@ async def update_account(
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
 
+    changes = {}
     if body.name is not None:
+        changes["name"] = body.name
         account.name = body.name
     if body.description is not None:
+        changes["description"] = body.description
         account.description = body.description
     if body.is_active is not None:
+        changes["is_active"] = body.is_active
         account.is_active = body.is_active
     if body.fund_id is not None:
+        changes["fund_id"] = str(body.fund_id)
         account.fund_id = body.fund_id
 
     await db.commit()
+
+    await write_audit_log(db, _user, "gl.account.update", "account", str(account_id), changes)
+
     return {"status": "updated"}
 
 
@@ -309,7 +319,7 @@ async def list_journal_entries(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(get_current_user),
+    _user: dict = Depends(require_permission("gl.journal_entries.view")),
 ):
     from app.models.gl import JournalEntry, JournalLine
     from app.models.org import FiscalPeriod, Subsidiary
@@ -329,6 +339,13 @@ async def list_journal_entries(
     if subsidiary_id:
         count_stmt = count_stmt.where(JournalEntry.subsidiary_id == subsidiary_id)
         data_stmt = data_stmt.where(JournalEntry.subsidiary_id == subsidiary_id)
+    else:
+        # Apply subsidiary scoping (if user didn't explicitly filter)
+        from app.middleware.auth import get_subsidiary_scope
+        scope = get_subsidiary_scope(_user)
+        if scope:
+            count_stmt = count_stmt.where(JournalEntry.subsidiary_id == scope)
+            data_stmt = data_stmt.where(JournalEntry.subsidiary_id == scope)
     if fiscal_period:
         count_stmt = count_stmt.join(FiscalPeriod).where(FiscalPeriod.period_code == fiscal_period)
         data_stmt = data_stmt.join(FiscalPeriod).where(FiscalPeriod.period_code == fiscal_period)
@@ -380,7 +397,7 @@ async def list_journal_entries(
 async def get_journal_entry(
     je_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(get_current_user),
+    _user: dict = Depends(require_permission("gl.journal_entries.view")),
 ):
     from app.models.gl import JournalEntry, JournalLine
 
@@ -442,7 +459,7 @@ async def get_journal_entry(
 async def create_journal_entry(
     body: JournalEntryCreate,
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(require_role("admin", "accountant")),
+    user: dict = Depends(require_permission("gl.journal_entries.create")),
 ):
     from app.models.gl import JournalEntry, JournalLine
     from app.models.org import FiscalPeriod, Subsidiary
@@ -525,6 +542,12 @@ async def create_journal_entry(
     await db.commit()
     await db.refresh(je)
 
+    await write_audit_log(db, user, "gl.journal_entry.create", "journal_entry", str(je.id), {
+        "entry_number": je.entry_number,
+        "subsidiary_id": str(body.subsidiary_id),
+        "status": je.status,
+    })
+
     return {
         "id": str(je.id),
         "entry_number": je.entry_number,
@@ -538,7 +561,7 @@ async def create_journal_entry(
 async def post_journal_entry(
     je_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(require_role("admin", "accountant")),
+    user: dict = Depends(require_permission("gl.journal_entries.post")),
 ):
     from app.models.gl import JournalEntry
 
@@ -559,6 +582,11 @@ async def post_journal_entry(
     je.posted_at = datetime.utcnow()
 
     await db.commit()
+
+    await write_audit_log(db, user, "gl.journal_entry.post", "journal_entry", str(je.id), {
+        "entry_number": je.entry_number,
+    })
+
     return {"status": "posted", "entry_number": je.entry_number}
 
 
@@ -566,7 +594,7 @@ async def post_journal_entry(
 async def reverse_journal_entry(
     je_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(require_role("admin", "accountant")),
+    user: dict = Depends(require_permission("gl.journal_entries.reverse")),
 ):
     from app.models.gl import JournalEntry, JournalLine
     from app.models.org import FiscalPeriod
@@ -627,6 +655,12 @@ async def reverse_journal_entry(
     await db.commit()
     await db.refresh(reversal)
 
+    await write_audit_log(db, user, "gl.journal_entry.reverse", "journal_entry", str(original.id), {
+        "original_entry_number": original.entry_number,
+        "reversal_id": str(reversal.id),
+        "reversal_entry_number": reversal.entry_number,
+    })
+
     return {
         "original_entry_number": original.entry_number,
         "reversal_id": str(reversal.id),
@@ -644,10 +678,17 @@ async def get_trial_balance(
     fiscal_period: str = Query(..., description="Period code like 2026-02"),
     subsidiary_id: uuid.UUID | None = Query(None),
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(get_current_user),
+    _user: dict = Depends(require_permission("gl.trial_balance.view")),
 ):
     from app.models.gl import Account, JournalEntry, JournalLine
     from app.models.org import FiscalPeriod
+
+    # Default to user's subsidiary if not explicitly provided
+    if not subsidiary_id:
+        from app.middleware.auth import get_subsidiary_scope
+        scope = get_subsidiary_scope(_user)
+        if scope:
+            subsidiary_id = scope
 
     # Find fiscal period
     fp_result = await db.execute(
@@ -717,7 +758,7 @@ async def get_trial_balance(
 @router.get("/funds")
 async def list_funds(
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(get_current_user),
+    _user: dict = Depends(require_permission("gl.funds.view")),
 ):
     """List all funds."""
     from app.models.fund import Fund

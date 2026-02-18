@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { login as apiLogin, getMe } from '../services/api';
 
 interface User {
@@ -8,6 +8,8 @@ interface User {
   email?: string | null;
   role: string;
   subsidiary_id: string | null;
+  permissions: string[];
+  scope: 'global' | 'subsidiary';
 }
 
 interface AuthContextType {
@@ -16,8 +18,12 @@ interface AuthContextType {
   loading: boolean;
   login: (username: string, password: string) => Promise<void>;
   logout: () => void;
-  isAdmin: boolean;
-  isAccountant: boolean;
+  /** Check if the current user has a specific permission */
+  can: (permission: string) => boolean;
+  /** Check if the current user has ANY of the listed permissions */
+  canAny: (...permissions: string[]) => boolean;
+  /** Check if the current user has ALL of the listed permissions */
+  canAll: (...permissions: string[]) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -31,8 +37,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (token) {
       getMe()
         .then((res) => {
-          setUser(res.data);
-          localStorage.setItem('user', JSON.stringify(res.data));
+          const data = res.data;
+          setUser({
+            user_id: data.user_id,
+            username: data.username,
+            display_name: data.display_name || data.username,
+            email: data.email,
+            role: data.role,
+            subsidiary_id: data.subsidiary_id,
+            permissions: data.permissions || [],
+            scope: data.scope || 'subsidiary',
+          });
+          localStorage.setItem('user', JSON.stringify(data));
         })
         .catch(() => {
           setToken(null);
@@ -53,12 +69,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('user', JSON.stringify(userData));
     setToken(access_token);
     setUser({
-      user_id: userData.id,
+      user_id: userData.id || userData.user_id,
       username: userData.username,
-      display_name: userData.display_name,
+      display_name: userData.display_name || userData.username,
       email: userData.email,
       role: userData.role,
       subsidiary_id: userData.subsidiary_id,
+      permissions: userData.permissions || [],
+      scope: userData.scope || 'subsidiary',
     });
   };
 
@@ -69,6 +87,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   };
 
+  const can = useCallback(
+    (permission: string): boolean => {
+      return user?.permissions?.includes(permission) ?? false;
+    },
+    [user],
+  );
+
+  const canAny = useCallback(
+    (...permissions: string[]): boolean => {
+      return permissions.some((p) => user?.permissions?.includes(p) ?? false);
+    },
+    [user],
+  );
+
+  const canAll = useCallback(
+    (...permissions: string[]): boolean => {
+      return permissions.every((p) => user?.permissions?.includes(p) ?? false);
+    },
+    [user],
+  );
+
   return (
     <AuthContext.Provider
       value={{
@@ -77,8 +116,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loading,
         login,
         logout,
-        isAdmin: user?.role === 'admin',
-        isAccountant: user?.role === 'accountant',
+        can,
+        canAny,
+        canAll,
       }}
     >
       {children}

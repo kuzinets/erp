@@ -181,4 +181,29 @@ export const triggerSync = (id: string | number, fiscalPeriod: string) =>
 export const getSyncLogs = (configId: string | number, params?: Record<string, any>) =>
   api.get(`/subsystems/${configId}/sync-logs`, { params });
 
+// ── Admin ───────────────────────────────────────────────────────────────────
+export const getUsers = (params?: Record<string, any>) =>
+  api.get('/admin/users', { params });
+
+export const getUser = (id: string) =>
+  api.get(`/admin/users/${id}`);
+
+export const createUser = (data: any) =>
+  api.post('/admin/users', data);
+
+export const updateUser = (id: string, data: any) =>
+  api.put(`/admin/users/${id}`, data);
+
+export const setPermissionOverride = (userId: string, data: any) =>
+  api.post(`/admin/users/${userId}/permissions`, data);
+
+export const deletePermissionOverride = (userId: string, permission: string) =>
+  api.delete(`/admin/users/${userId}/permissions/${encodeURIComponent(permission)}`);
+
+export const getRoles = () =>
+  api.get('/admin/roles');
+
+export const getAuditLog = (params?: Record<string, any>) =>
+  api.get('/admin/audit-log', { params });
+
 export default api;

@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
 import Layout from './components/Layout';
+import PermissionGuard from './components/PermissionGuard';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import ChartOfAccounts from './pages/ChartOfAccounts';
@@ -13,6 +14,8 @@ import Departments from './pages/Departments';
 import Contacts from './pages/Contacts';
 import Subsystems from './pages/Subsystems';
 import Settings from './pages/Settings';
+import UserManagement from './pages/UserManagement';
+import AuditLog from './pages/AuditLog';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { token, loading } = useAuth();
@@ -56,6 +59,8 @@ export default function App() {
         <Route path="/contacts" element={<Contacts />} />
         <Route path="/subsystems" element={<Subsystems />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/admin/users" element={<PermissionGuard permission="admin.users.view"><UserManagement /></PermissionGuard>} />
+        <Route path="/admin/audit" element={<PermissionGuard permission="admin.audit_log.view"><AuditLog /></PermissionGuard>} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

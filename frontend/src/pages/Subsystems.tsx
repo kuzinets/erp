@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 
 export default function Subsystems() {
-  const { isAdmin } = useAuth();
+  const { can } = useAuth();
   const [systems, setSystems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -133,7 +133,7 @@ export default function Subsystems() {
         </div>
 
         {/* Trigger Sync */}
-        {isAdmin && (
+        {can('subsystems.sync') && (
           <div className="card">
             <h3 className="text-sm font-semibold text-kailasa-muted uppercase mb-3">Trigger Sync</h3>
             <div className="flex gap-3 items-end">
